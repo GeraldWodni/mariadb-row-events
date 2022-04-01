@@ -53,6 +53,7 @@ class MariadbRowEvents extends EventEmitter {
     }
 
     binlogPacket( err, packet ) {
+        return;
         console.log( "Got binlogPacket:", err, packet );
 
         if( err )
