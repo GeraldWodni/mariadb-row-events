@@ -124,19 +124,43 @@ class BinlogPacket {
 
         const columnCount = parser.parseLengthCodedNumber();
         this.data.columnTypes = [];
-        for( let i = 0; i < columnCount; i++ )
-            this.data.columnTypes.push( parser.parseUnsignedNumber(1) );
+        this.data.columnTypeNames = [];
+        for( let i = 0; i < columnCount; i++ ) {
+            const columnType = parser.parseUnsignedNumber(1);
+            this.data.columnTypes.push( columnType );
+            this.data.columnTypeNames.push( MysqlType[ columnType ] );
+        }
 
         const metadataLength = parser.parseLengthCodedNumber();
         this.data.metadataLength = metadataLength;
         this.data.metadata = parser.parseBuffer(this.data.metadataLength);
         this.data.nullColumns = this.parseBitfield( parser, columnCount );
 
+        // metadata encodes the dynamic length for the following types
+        // https://mariadb.com/kb/en/rows_event_v1v2/#column-data-formats
+        const twoBytesLength = [ 'BIT', 'ENUM', 'SET', 'NEWDECIMAL', 'DECIMAL', 'VARCHAR', 'VAR_STRING', 'STRING ' ];
+        const oneByteLength  = [ 'TINY_BLOB', 'MEDIUM_BLOB', 'LONG_BLOB', 'BLOB', 'FLOAT', 'DOUBLE', 'TIMESTAMP2', 'DATETIME2', 'TIME2 ' ];
+
+        this.data.columnLengths = [];
+        let offset = 0;
+        this.data.columnTypeNames.forEach( columnTypeName => {
+            var length = null;
+            if( oneByteLength.indexOf( columnTypeName ) >= 0 )
+                length = this.data.metadata.readUint8( offset++ );
+            else if( twoBytesLength.indexOf( columnTypeName ) >= 0 ) {
+                length = this.data.metadata.readUint16LE( offset++ );
+                offset++;
+            }
+            this.data.columnLengths.push( length );
+        });
+
         tableMaps[ this.data.tableId ] = {
             database: this.data.database,
             table: this.data.table,
             columnTypes: this.data.columnTypes,
+            columnTypeNames: this.data.columnTypeNames,
             nullColumns: this.data.nullColumns,
+            columnLengths: this.data.columnLengths,
         }
     }
 
@@ -147,6 +171,8 @@ class BinlogPacket {
         this.data.usedColumns = this.parseBitfield( parser, this.data.columnCount );
         this.data.nullColumns = this.parseBitfield( parser, this.data.columnCount );
         this.data.tableMap = tableMaps[ this.data.tableId ];
+
+        this.data.columns = this.parseColumnData( parser, opts );
     }
 
     parse_XID_EVENT( parser, opts ) {
@@ -154,6 +180,57 @@ class BinlogPacket {
     }
 
     /* parser helpers */
+    parseColumnData( parser, opts ) {
+        const columns = [];
+        for( var i = 0; i < this.data.columnCount; i++ ) {
+            if( this.data.nullColumns[i] ) {
+                columns.push( null );
+                continue;
+            }
+            /* See https://mariadb.com/kb/en/rows_event_v1v2/#column-data-formats */
+            switch( this.data.tableMap.columnTypeNames[i] ) {
+                /* simple types */
+                case 'TINY':
+                    columns.push( parser.parseUnsignedNumber(1) );
+                    break;
+                case 'SHORT':
+                case 'YEAR':
+                    columns.push( parser.parseUnsignedNumber(2) );
+                    break;
+                case 'INT24':
+                    columns.push( parser.parseUnsignedNumber(3) );
+                    break;
+                case 'LONG':
+                    columns.push( parser.parseUnsignedNumber(4) );
+                    break;
+                case 'LONGLONG':
+                    columns.push( this.parseUnsignedNumber8( parser ) );
+                    break;
+
+                case 'FLOAT':
+                    columns.push( this.parseFloat( parser ) );
+                    break;
+                case 'DOUBLE':
+                    columns.push( this.parseDouble( parser ) );
+                    break;
+
+                case 'DATETIME2': {
+                        columns.push( { dl: this.data.tableMap.columnLengths[i] } );
+                    }
+                    break;
+
+                case 'BLOB': {
+                        //throw new Error( "BLOB not implemented, examples needed" );
+                    }
+                    break;
+
+                default:
+                    columns.push( { "undefined": true } );
+            }
+        }
+        return columns;
+    }
+
     parseBitfield( parser, count ) {
         const length = Math.floor((count + 7)/8);
         const bitfield = parser.parseBuffer( length );
@@ -165,6 +242,14 @@ class BinlogPacket {
         return values;
     }
 
+    parseFloat( parser ) {
+        const buffer = parser.parseBuffer(4);
+        return buffer.readFloatLE();
+    }
+    parseDouble( parser ) {
+        const buffer = parser.parseBuffer(8);
+        return buffer.readDoubleLE();
+    }
     parseCountedStringNull( parser, intLength ) {
         const length = parser.parseUnsignedNumber( intLength );
         return this.parseStringNull( parser, length );
