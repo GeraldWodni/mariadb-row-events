@@ -1,6 +1,8 @@
 const MysqlType = require('mysql/lib/protocol/constants/types');
 const MysqlTypeArray = Object.keys(MysqlType);
 
+// const fs = require("fs");
+
 const BinlogEvents = {
     0x02: 'QUERY_EVENT',
     0x04: 'ROTATE_EVENT',
@@ -117,6 +119,7 @@ class BinlogPacket {
     }
 
     parse_TABLE_MAP_EVENT( parser, opts ) {
+        /* Todo: get column names via DESC command? */
         this.data.tableId = this.parseUnsignedNumber6( parser );
         this.data.futureUse = parser.parseUnsignedNumber(2);
         this.data.database = this.parseCountedStringNull( parser, 1 );
@@ -138,7 +141,7 @@ class BinlogPacket {
 
         // metadata encodes the dynamic length for the following types
         // https://mariadb.com/kb/en/rows_event_v1v2/#column-data-formats
-        const twoBytesLength = [ 'BIT', 'ENUM', 'SET', 'NEWDECIMAL', 'DECIMAL', 'VARCHAR', 'VAR_STRING', 'STRING ' ];
+        const twoBytesLength = [ 'BIT', 'ENUM', 'SET', 'NEWDECIMAL', 'DECIMAL', 'VARCHAR', 'VAR_STRING', 'STRING' ];
         const oneByteLength  = [ 'TINY_BLOB', 'MEDIUM_BLOB', 'LONG_BLOB', 'BLOB', 'FLOAT', 'DOUBLE', 'TIMESTAMP2', 'DATETIME2', 'TIME2 ' ];
 
         this.data.columnLengths = [];
@@ -181,6 +184,9 @@ class BinlogPacket {
 
     /* parser helpers */
     parseColumnData( parser, opts ) {
+        //fs.writeFileSync( `captured/write-row-${this.logPos}`, parser.parsePacketTerminatedBuffer() );
+        //return;
+
         const columns = [];
         for( var i = 0; i < this.data.columnCount; i++ ) {
             if( this.data.nullColumns[i] ) {
@@ -215,12 +221,36 @@ class BinlogPacket {
                     break;
 
                 case 'DATETIME2': {
-                        columns.push( { dl: this.data.tableMap.columnLengths[i] } );
+                        columns.push( { dl: this.data.tableMap.columnLengths[i], data: parser.parseBuffer(5) } );
+                    }
+                    break;
+
+                case 'VARCHAR': {
+                        let length = 0;
+                        if( this.data.tableMap.columnLengths[i] > 255 )
+                            length = parser.parseUnsignedNumber(2);
+                        else
+                            length = parser.parseUnsignedNumber(1);
+
+                        columns.push( parser.parseString(length) );
+                    }
+                    break;
+
+                case 'STRING': {
+                        const metaData = this.data.tableMap.columnLengths[i];
+                        const length = metaData >> 8;
+                        columns.push({
+                            type:   MysqlType[ metaData & 0xFF ],
+                            length,
+                            data:   parser.parseBuffer( length ),
+                        });
                     }
                     break;
 
                 case 'BLOB': {
-                        //throw new Error( "BLOB not implemented, examples needed" );
+                        const intLength = this.data.tableMap.columnLengths[i];
+                        const length = parser.parseUnsignedNumber( intLength );
+                        columns.push( parser.parseString( length ) );
                     }
                     break;
 
@@ -228,6 +258,7 @@ class BinlogPacket {
                     columns.push( { "undefined": true } );
             }
         }
+        console.log( this.logPos, JSON.stringify( columns ) );
         return columns;
     }
 
