@@ -3,6 +3,12 @@ const MysqlTypeArray = Object.keys(MysqlType);
 
 // const fs = require("fs");
 
+const IEEE_754_BINARY_64_PRECISION = Math.pow(2, 53);
+const DIG_PER_DEC1 = 9
+const SIZEOF_DEC1 = 4;
+const powers10 = [ 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
+const dig2bytes= [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 4 ];
+const frac_max = [ 900000000, 990000000, 999000000, 999900000, 999990000, 999999000, 999999900, 999999990 ]
 const BinlogEvents = {
     0x02: 'QUERY_EVENT',
     0x04: 'ROTATE_EVENT',
@@ -65,7 +71,9 @@ class BinlogPacket {
                 this.error = this.dataError = err;
             }
 
-        console.log( "BINLOG:", this.toString() );
+        //if( this.eventName == "WRITE_ROWS_EVENT" )
+        //if( this.eventName == "UPDATE_ROWS_EVENT" )
+            console.log( "BINLOG:", this.toString() );
     }
 
     parseHeader( parser, opts ) {
@@ -175,7 +183,22 @@ class BinlogPacket {
         this.data.nullColumns = this.parseBitfield( parser, this.data.columnCount );
         this.data.tableMap = tableMaps[ this.data.tableId ];
 
-        this.data.columns = this.parseColumnData( parser, opts );
+        this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
+    }
+
+    parse_UPDATE_ROWS_EVENT( parser, opts ) {
+        this.data.tableId = this.parseUnsignedNumber6( parser );
+        this.data.flags = parser.parseUnsignedNumber(2);
+        this.data.columnCount = parser.parseLengthCodedNumber();
+        this.data.usedColumns = this.parseBitfield( parser, this.data.columnCount );
+        this.data.usedColumnsUpdate = this.parseBitfield( parser, this.data.columnCount );
+        this.data.nullColumns = this.parseBitfield( parser, this.data.columnCount );
+        this.data.tableMap = tableMaps[ this.data.tableId ];
+
+        this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
+
+        this.data.nullColumnsUpdate = this.parseBitfield( parser, this.data.columnCount );
+        this.data.columnsUpdate = this.parseColumnData( parser, { nullColumns: this.data.nullColumnsUpdate } );
     }
 
     parse_XID_EVENT( parser, opts ) {
@@ -189,7 +212,7 @@ class BinlogPacket {
 
         const columns = [];
         for( var i = 0; i < this.data.columnCount; i++ ) {
-            if( this.data.nullColumns[i] ) {
+            if( opts.nullColumns[i] ) {
                 columns.push( null );
                 continue;
             }
@@ -248,10 +271,22 @@ class BinlogPacket {
                     }
                     break;
 
+                case 'NEWDECIMAL': {
+                        const columnLength = this.data.tableMap.columnLengths[i];
+                        const precision = columnLength & 0xFF;
+                        const scale     = columnLength >> 8;
+                        const length = this.decimal_bin_size( precision, scale );
+                        columns.push( { precision, scale, data: parser.parseBuffer(length) } );
+                    }
+                    break;
+
+                case 'TINY_BLOB':
+                case 'MEDIUM_BLOB':
+                case 'LONG_BLOB':
                 case 'BLOB': {
                         const intLength = this.data.tableMap.columnLengths[i];
                         const length = parser.parseUnsignedNumber( intLength );
-                        columns.push( parser.parseString( length ) );
+                        columns.push( { intLength, length, blob: parser.parseString( length ) } );
                     }
                     break;
 
@@ -259,7 +294,7 @@ class BinlogPacket {
                     columns.push( { "undefined": true } );
             }
         }
-        console.log( this.logPos, JSON.stringify( columns ) );
+        //console.log( this.logPos, JSON.stringify( columns ) );
         return columns;
     }
 
@@ -302,6 +337,23 @@ class BinlogPacket {
         return pos1 << 32 | pos2;
     }
 
+    /* conversion helpers */
+
+    /* Most of the following code is converted from the mariadb sources
+     * https://github.com/MariaDB/server/blob/10.9/strings/decimal.c
+     * */
+
+    /* compute size of buffer */
+    decimal_bin_size(precision, scale) {
+        const intg = precision - scale;
+        const intg0 = ~~( intg  / DIG_PER_DEC1 );
+        const frac0 = ~~( scale / DIG_PER_DEC1 );
+        const intg0x = intg  - intg0 * DIG_PER_DEC1;
+        const frac0x = scale - frac0 * DIG_PER_DEC1;
+        return intg0 * SIZEOF_DEC1 + dig2bytes[ intg0x ]
+             + frac0 * SIZEOF_DEC1 + dig2bytes[ frac0x ];
+    }
+
     /* reflection */
     get eventName() {
         if( this.eventType in BinlogEvents )
@@ -311,12 +363,12 @@ class BinlogPacket {
     }
 
     toString() {
-        return this.eventName + ': ' + JSON.stringify( {
+        return "\x1B[32m" + this.eventName + '\x1B[0m: ' + JSON.stringify( {
             //timestamp: this.timestamp,
             //eventType: this.eventType,
             //serverId:  this.serverId,
             //eventLength: this.eventLength,
-            //logPos:    this.logPos,
+            logPos:    this.logPos,
             //flags:     this.flags,
             data:      this.data,
         } );//, null, 4 );
