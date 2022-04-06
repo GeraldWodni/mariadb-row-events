@@ -222,6 +222,7 @@ class BinlogPacket {
 
                 case 'DATETIME2': {
                         columns.push( { dl: this.data.tableMap.columnLengths[i], data: parser.parseBuffer(5) } );
+                        //columns.push( new Date( parser.parseLengthCodedString() ) );
                     }
                     break;
 
