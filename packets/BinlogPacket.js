@@ -361,6 +361,14 @@ class BinlogPacket {
     }
 
     bin2decimal(precision, scale, bin_size, data) {
+        const s = this.bin2decimalString(precision, scale, bin_size, data);
+        /* only convert to number if we do not loose precision */
+        if( Number(s).toString() != s )
+            return s;
+        return Number(s);
+    }
+
+    bin2decimalString(precision, scale, bin_size, data) {
         const intg = precision - scale;
         const intg0 = ~~( intg  / DIG_PER_DEC1 );
         const frac0 = ~~( scale / DIG_PER_DEC1 );
@@ -436,6 +444,10 @@ class BinlogPacket {
         /* ensure digit before comma */
         if( str[0] == "." )
             str = "0" + str;
+
+        /* remove trailing comma */
+        if( str[str.length - 1] == "." )
+            str = str.substr( 0, str.length - 1 );
 
         if( mask )
             str = "-" + str;
