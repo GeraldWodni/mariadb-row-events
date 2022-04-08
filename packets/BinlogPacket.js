@@ -119,6 +119,9 @@ class BinlogPacket {
         this.data.defaultSchemaLength = parser.parseUnsignedNumber(1);
         this.data.errorCode     = parser.parseUnsignedNumber(2);
         this.data.variableLength= parser.parseUnsignedNumber(2);
+        this.data.statusVariables = parser.parseBuffer( this.data.variableLength );
+        this.data.defaultSchema = this.parseStringNull( parser, this.data.defaultSchemaLength );
+        this.data.statement     = parser.parsePacketTerminatedString();
     }
 
     parse_ROTATE_EVENT( parser, opts ) {
