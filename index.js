@@ -41,7 +41,7 @@ class MariadbRowEvents extends EventEmitter {
             registerSlave.on( 'end', () => {
                 console.log( "registered!" );
 
-                this.binlog = new Binlog( { }, null, this.binlogPacket.bind( this ) );
+                this.binlog = new Binlog( { binlog: this.opts.binlog }, null, this.binlogPacket.bind( this ) );
                 this.bindErrors( this.binlog );
                 this.binlog.on( 'end', () => console.log( "(BINLOG END)" ) );
 
@@ -97,6 +97,9 @@ function main() {
         mysql: {
             host: "localhost",
             port: "3306",
+        },
+        binlog: {
+            position: 68397,
         }
     }
     if( process.env.MYSQL_HOST      ) config.mysql.host     = process.env.MYSQL_HOST;
