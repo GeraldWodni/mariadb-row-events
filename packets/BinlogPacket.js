@@ -4,11 +4,12 @@ const MysqlTypeArray = Object.keys(MysqlType);
 // const fs = require("fs");
 
 const IEEE_754_BINARY_64_PRECISION = Math.pow(2, 53);
-const DIG_PER_DEC1 = 9
+const DIG_PER_DEC1 = 9;
 const SIZEOF_DEC1 = 4;
-const powers10 = [ 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000];
 const dig2bytes= [ 0, 1, 1, 2, 2, 3, 3, 4, 4, 4 ];
-const frac_max = [ 900000000, 990000000, 999000000, 999900000, 999990000, 999999000, 999999900, 999999990 ]
+const byteMask = [ 0, 0xFF, 0xFFFF, 0xFFFFFF, 0xFFFFFFFF ];
+const zeros = [ "", "0", "00", "000", "0000", "00000", "000000", "0000000", "00000000", "000000000" ];
+
 const BinlogEvents = {
     0x02: 'QUERY_EVENT',
     0x04: 'ROTATE_EVENT',
@@ -279,7 +280,9 @@ class BinlogPacket {
                         const precision = columnLength & 0xFF;
                         const scale     = columnLength >> 8;
                         const length = this.decimal_bin_size( precision, scale );
-                        columns.push( { precision, scale, data: parser.parseBuffer(length) } );
+                        const data = parser.parseBuffer(length);
+                        console.log( "\x1B[32mDECIMAL\x1B[0m:", data );
+                        columns.push( this.bin2decimal( precision, scale, length, data ) );
                     }
                     break;
 
@@ -355,6 +358,89 @@ class BinlogPacket {
         const frac0x = scale - frac0 * DIG_PER_DEC1;
         return intg0 * SIZEOF_DEC1 + dig2bytes[ intg0x ]
              + frac0 * SIZEOF_DEC1 + dig2bytes[ frac0x ];
+    }
+
+    bin2decimal(precision, scale, bin_size, data) {
+        const intg = precision - scale;
+        const intg0 = ~~( intg  / DIG_PER_DEC1 );
+        const frac0 = ~~( scale / DIG_PER_DEC1 );
+        const intg0x = intg  - intg0 * DIG_PER_DEC1;
+        const frac0x = scale - frac0 * DIG_PER_DEC1;
+
+        console.log( { intg0, intg0x, frac0, frac0x } );
+
+        const mask = data.readUint8(0) & 0x80 ? 0 : -1;
+        data[0] ^= 0x80;
+        console.log( "Bxor:", data );
+        let offset = 0;
+
+        let str = "";
+        if( intg0x ) {
+            const bytes = dig2bytes[intg0x];
+            let x;
+            switch( bytes ) {
+                case 1: x = data.readUint8(offset);     break;
+                case 2: x = data.readUint16BE(offset);  break;
+                case 3: x = data.readUint16BE(offset) << 8 | data.readUint8(offset+2); break;
+                case 4: x = data.readUint32BE(offset);  break;
+            }
+            console.log( "BY0:", bytes, "X:", x, "MASK:", mask, "Xxor:", x ^ mask );
+            x = (x ^ mask) & byteMask[ bytes ];
+            str += x.toString();
+            offset += bytes;
+        }
+        for( let intBytes = 0; intBytes < intg0; intBytes++ ) {
+            let x = (data.readUint32BE(offset) ^ mask) & 0xFFFFFFFF;
+            const s = x.toString();
+            str += zeros[DIG_PER_DEC1-s.length] + s;
+            offset += 4;
+        }
+        str += ".";
+        for( let fracBytes = 0; fracBytes < frac0; fracBytes++ ) {
+            let x = (data.readUint32BE(offset) ^ mask) & 0xFFFFFFFF;
+            const s = x.toString();
+            str += zeros[DIG_PER_DEC1-s.length] + s;
+            offset += 4;
+        }
+        if( frac0x ) {
+            let bytes = dig2bytes[frac0x];
+            let x;
+            switch( bytes ) {
+                case 1: x = data.readUint8(offset);     break;
+                case 2: x = data.readUint16BE(offset);  break;
+                case 3: x = data.readUint16BE(offset) << 8 | data.readUint8(offset+2); break;
+                case 4: x = data.readUint32BE(offset);  break;
+            }
+            x = (x ^ mask) & byteMask[ bytes ];
+            const s = x.toString();
+            str += zeros[frac0x-s.length] + s;
+        }
+        /* remove leading zeros */
+        let leadingZeros = 0;
+        for( let i = 0; i < str.length; i++ )
+            if( str[i] == "0" )
+                leadingZeros++;
+            else
+                break;
+        str = str.substring( leadingZeros );
+
+        /* remove trailing zeros */
+        let trailingZeros = 0;
+        for( let i = str.length - 1; i >= 0; i-- )
+            if( str[i] == "0" )
+                trailingZeros++;
+            else
+                break;
+        str = str.substring( 0, str.length - trailingZeros );
+
+        /* ensure digit before comma */
+        if( str[0] == "." )
+            str = "0" + str;
+
+        if( mask )
+            str = "-" + str;
+
+        return str;
     }
 
     /* reflection */
