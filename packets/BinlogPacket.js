@@ -281,7 +281,6 @@ class BinlogPacket {
                         const scale     = columnLength >> 8;
                         const length = this.decimal_bin_size( precision, scale );
                         const data = parser.parseBuffer(length);
-                        console.log( "\x1B[32mDECIMAL\x1B[0m:", data );
                         columns.push( this.bin2decimal( precision, scale, length, data ) );
                     }
                     break;
@@ -375,11 +374,8 @@ class BinlogPacket {
         const intg0x = intg  - intg0 * DIG_PER_DEC1;
         const frac0x = scale - frac0 * DIG_PER_DEC1;
 
-        console.log( { intg0, intg0x, frac0, frac0x } );
-
         const mask = data.readUint8(0) & 0x80 ? 0 : -1;
         data[0] ^= 0x80;
-        console.log( "Bxor:", data );
         let offset = 0;
 
         let str = "";
@@ -392,7 +388,6 @@ class BinlogPacket {
                 case 3: x = data.readUint16BE(offset) << 8 | data.readUint8(offset+2); break;
                 case 4: x = data.readUint32BE(offset);  break;
             }
-            console.log( "BY0:", bytes, "X:", x, "MASK:", mask, "Xxor:", x ^ mask );
             x = (x ^ mask) & byteMask[ bytes ];
             str += x.toString();
             offset += bytes;
