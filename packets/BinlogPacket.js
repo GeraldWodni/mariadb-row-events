@@ -248,8 +248,10 @@ class BinlogPacket {
                     break;
 
                 case 'DATETIME2': {
-                        columns.push( { dl: this.data.tableMap.columnLengths[i], data: parser.parseBuffer(5) } );
-                        //columns.push( new Date( parser.parseLengthCodedString() ) );
+                        const fractionPrecision = this.data.tableMap.columnLengths[i];
+                        const data = parser.parseBuffer(5);
+                        const fraction = parser.parseBuffer( Math.ceil( fractionPrecision / 2 ) );
+                        columns.push( this.bin2datetime( data, fraction ) );
                     }
                     break;
 
@@ -343,6 +345,23 @@ class BinlogPacket {
     }
 
     /* conversion helpers */
+
+    /* The following time code is converted from
+     * https://github.com/AGCPartners/NeoReplicator/blob/c7d34120ac1577f05106ac3bbd0402107639c6d8/lib/common.js#L506
+     * 2022-04-08 22:41:12
+     */
+    bin2datetime( data, fraction ) {
+        const yearMonth = (data.readUInt32BE() >> 14) & 0x1FFFF;
+        const lowWord = data.readUInt32BE(1);
+        const month = yearMonth % 13;
+        const year = (yearMonth-month)/13;
+        const day =    ( lowWord >> 17 ) & 0x1F;
+        const hour =   ( lowWord >> 12 ) & 0x1F;
+        const minute = ( lowWord >> 6 )  & 0x3F;
+        const second =   lowWord         & 0x3F;
+
+        return new Date( Date.UTC( year, month-1, day, hour, minute, second ) );
+    }
 
     /* Most of the following code is converted from the mariadb sources
      * https://github.com/MariaDB/server/blob/10.9/strings/decimal.c
