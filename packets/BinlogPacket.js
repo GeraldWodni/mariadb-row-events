@@ -73,7 +73,7 @@ class BinlogPacket {
             }
 
         //if( this.eventName == "WRITE_ROWS_EVENT" )
-        //if( this.eventName == "UPDATE_ROWS_EVENT" )
+        if( this.eventName == "UPDATE_ROWS_EVENT" )
             console.log( "BINLOG:", this.toString() );
     }
 
@@ -128,6 +128,11 @@ class BinlogPacket {
     parse_ROTATE_EVENT( parser, opts ) {
         this.data.position = this.parseUnsignedNumber8( parser );
         this.data.nextBinlogName = parser.parsePacketTerminatedString();
+    }
+
+    parse_FORMAT_DESCRIPTION_EVENT( parser, opts ) {
+        this.data.logFormatVersion  = parser.parseUnsignedNumber(2);
+        this.data.serverVersion     = this.parsePaddedString(parser, 50);
     }
 
     parse_TABLE_MAP_EVENT( parser, opts ) {
@@ -361,6 +366,13 @@ class BinlogPacket {
         parser.parseUnsignedNumber(1); // read terminating Null
         return name;
     }
+    parsePaddedString( parser, length ) {
+        let buffer = parser.parseBuffer( length );
+        let strlen = -1;
+        while( buffer[ ++strlen ] != 0 );
+
+        return buffer.toString( 'ascii', 0, strlen );
+    };
     parseUnsignedNumber8( parser ) {
         const pos1 = parser.parseUnsignedNumber(4);
         const pos2 = parser.parseUnsignedNumber(4);
