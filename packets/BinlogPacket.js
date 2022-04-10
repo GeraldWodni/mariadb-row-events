@@ -250,7 +250,7 @@ class BinlogPacket {
                 case 'DATETIME2': {
                         const fractionPrecision = this.data.tableMap.columnLengths[i];
                         const data = parser.parseBuffer(5);
-                        const fraction = parser.parseBuffer( Math.ceil( fractionPrecision / 2 ) );
+                        const fraction = this.parseTemporalFraction( parser, fractionPrecision );
                         columns.push( this.bin2datetime( data, fraction ) );
                     }
                     break;
@@ -324,6 +324,27 @@ class BinlogPacket {
         const buffer = parser.parseBuffer(8);
         return buffer.readDoubleLE();
     }
+    /* The following time code is converted from
+     * https://github.com/AGCPartners/NeoReplicator/blob/c7d34120ac1577f05106ac3bbd0402107639c6d8/lib/common.js#L335
+     */
+    parseTemporalFraction( parser, precision ) {
+        if( !precision )
+            return 0;
+
+        const size = Math.ceil( precision / 2 );
+        let fraction = this.readIntBE( parser, size );
+        parser.parseBuffer( Math.ceil( fractionPrecision / 2 ) );
+        if( precision % 2 != 0 )
+            fraction /= 10;
+        fraction = Math.abs( fraction );
+
+        if( precision > 3 )
+            return Math.floor( fraction / Math.pow( 10, precision - 3 ) );
+        else if( precision < 3 )
+            return fraction *= Math.pow( 10, 3 - precision );
+        else
+            return fraction;
+    }
     parseCountedStringNull( parser, intLength ) {
         const length = parser.parseUnsignedNumber( intLength );
         return this.parseStringNull( parser, length );
@@ -344,11 +365,27 @@ class BinlogPacket {
         return pos1 << 32 | pos2;
     }
 
+    readUIntBE( buffer, size ) {
+        switch( size ) {
+            case 1: x = data.readUint8(offset);     break;
+            case 2: x = data.readUint16BE(offset);  break;
+            case 3: x = data.readUint16BE(offset) << 8 | data.readUint8(offset+2); break;
+            case 4: x = data.readUint32BE(offset);  break;
+        }
+    }
+    readIntBE( buffer, size ) {
+        switch( size ) {
+            case 1: x = data.readInt8(offset);     break;
+            case 2: x = data.readInt16BE(offset);  break;
+            case 3: x = data.readInt16BE(offset) << 8 | data.readInt8(offset+2); break;
+            case 4: x = data.readInt32BE(offset);  break;
+        }
+    }
+
     /* conversion helpers */
 
     /* The following time code is converted from
      * https://github.com/AGCPartners/NeoReplicator/blob/c7d34120ac1577f05106ac3bbd0402107639c6d8/lib/common.js#L506
-     * 2022-04-08 22:41:12
      */
     bin2datetime( data, fraction ) {
         const yearMonth = (data.readUInt32BE() >> 14) & 0x1FFFF;
@@ -360,7 +397,7 @@ class BinlogPacket {
         const minute = ( lowWord >> 6 )  & 0x3F;
         const second =   lowWord         & 0x3F;
 
-        return new Date( Date.UTC( year, month-1, day, hour, minute, second ) );
+        return new Date( Date.UTC( year, month-1, day, hour, minute, second, fraction ) );
     }
 
     /* Most of the following code is converted from the mariadb sources
