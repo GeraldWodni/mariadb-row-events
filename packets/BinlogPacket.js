@@ -247,6 +247,13 @@ class BinlogPacket {
                     columns.push( this.parseDouble( parser ) );
                     break;
 
+                case 'TIMESTAMP2': {
+                    const fractionPrecision = this.data.tableMap.columnLengths[i];
+                    const seconds = parser.parseUnsignedNumber(4);
+                    fraction = this.parseTemporalFraction( parser, fractionPrecision );
+                    columns.push( new Date(seconds * 1000 + fraction) );
+                    break;
+                }
                 case 'DATETIME2': {
                         const fractionPrecision = this.data.tableMap.columnLengths[i];
                         const data = parser.parseBuffer(5);
