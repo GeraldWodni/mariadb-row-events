@@ -12,8 +12,9 @@ const zeros = [ "", "0", "00", "000", "0000", "00000", "000000", "0000000", "000
 
 const BinlogEvents = {
     0x02: 'QUERY_EVENT',
+    0x03: 'STOP_EVENT',
     0x04: 'ROTATE_EVENT',
-    0x0e: 'USERVAR_EVENT',
+    0x0e: 'USER_VAR_EVENT',
     0x0f: 'FORMAT_DESCRIPTION_EVENT',
     0x10: 'XID_EVENT',
     0x13: 'TABLE_MAP_EVENT',
@@ -73,8 +74,10 @@ class BinlogPacket {
             }
 
         //if( this.eventName == "WRITE_ROWS_EVENT" )
-        if( this.eventName == "UPDATE_ROWS_EVENT" )
-            console.log( "BINLOG:", this.toString() );
+        //if( this.eventName == "UPDATE_ROWS_EVENT" )
+        //if( this.eventName == "USER_VAR_EVENT" )
+        //    console.log( "BINLOG:", this.toString() );
+        //console.log( "\x1B[32m" + this.eventName + '\x1B[0m: ' + JSON.stringify( { } ) );
     }
 
     parseHeader( parser, opts ) {
@@ -130,12 +133,14 @@ class BinlogPacket {
         this.data.nextBinlogName = parser.parsePacketTerminatedString();
     }
 
+    parse_STOP_EVENT( parser, opts ) {
+    }
+
     parse_FORMAT_DESCRIPTION_EVENT( parser, opts ) {
         this.data.logFormatVersion  = parser.parseUnsignedNumber(2);
         this.data.serverVersion     = this.parsePaddedString(parser, 50);
     }
-
-    parse_TABLE_MAP_EVENT( parser, opts ) {
+parse_TABLE_MAP_EVENT( parser, opts ) {
         /* Todo: get column names via DESC command? */
         this.data.tableId = this.parseUnsignedNumber6( parser );
         this.data.futureUse = parser.parseUnsignedNumber(2);
@@ -184,7 +189,7 @@ class BinlogPacket {
         }
     }
 
-    parse_WRITE_ROWS_EVENT( parser, opts ) {
+    parseRowsEvent( parser, opts ) {
         this.data.tableId = this.parseUnsignedNumber6( parser );
         this.data.flags = parser.parseUnsignedNumber(2);
         this.data.columnCount = parser.parseLengthCodedNumber();
@@ -193,6 +198,13 @@ class BinlogPacket {
         this.data.tableMap = tableMaps[ this.data.tableId ];
 
         this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
+    }
+
+    parse_DELETE_ROWS_EVENT( parser, opts ) {
+        return this.parseRowsEvent( parser, opts );  
+    }
+    parse_WRITE_ROWS_EVENT( parser, opts ) {
+        return this.parseRowsEvent( parser, opts );  
     }
 
     parse_UPDATE_ROWS_EVENT( parser, opts ) {
@@ -208,6 +220,19 @@ class BinlogPacket {
 
         this.data.nullColumnsUpdate = this.parseBitfield( parser, this.data.columnCount );
         this.data.columnsUpdate = this.parseColumnData( parser, { nullColumns: this.data.nullColumnsUpdate } );
+    }
+
+    parse_USER_VAR_EVENT( parser, opts ) {
+        this.data.name = this.parseCountedString( parser, 4 );
+        this.data.nullIndicator = parser.parseUnsignedNumber(1);
+        if( this.data.nullIndicator )
+            this.data.value = null;
+        else {
+            this.data.variableType = this.parseUnsignedNumber(1)
+            this.data.collationNumber = parser.parseUnsignedNumber(4);
+            this.data.value = this.parseCountedString( parser, 4 );
+            this.data.flags = parser.parseUnsignedNumber(1);
+        }
     }
 
     parse_XID_EVENT( parser, opts ) {
@@ -356,6 +381,10 @@ class BinlogPacket {
             return fraction *= Math.pow( 10, 3 - precision );
         else
             return fraction;
+    }
+    parseCountedString( parser, intLength ) {
+        const length = parser.parseUnsignedNumber( intLength );
+        return parser.parseString( length );
     }
     parseCountedStringNull( parser, intLength ) {
         const length = parser.parseUnsignedNumber( intLength );
@@ -543,6 +572,56 @@ class BinlogPacket {
             //flags:     this.flags,
             data:      this.data,
         } );//, null, 4 );
+    }
+
+    getMostImportantData() {
+        switch( this.eventName ) {
+            case 'XID_EVENT':
+                return {
+                    xid: this.data.xid,
+                    ignore: true,
+                }
+            case 'QUERY_EVENT': {
+                const statement = this.data.statement;
+                const ignore = statement == "COMMIT" || statement == "BEGIN" || statement.indexOf("#") == 0;
+                return {
+                    statement,
+                    ignore,
+                }
+            }
+            case 'TABLE_MAP_EVENT':
+                return {
+                    database: this.data.database,
+                    table: this.data.table,
+                    columnType: this.data.columnTypes,
+                    ignore: true,
+                }
+            case 'DELETE_ROWS_EVENT':
+            case 'WRITE_ROWS_EVENT':
+            case 'UPDATE_ROWS_EVENT':
+                return {
+                    database: this.data.tableMap.database,
+                    table: this.data.tableMap.table,
+                    columns: this.data.columns,
+                    //ignore: true,
+                }
+            default:
+                return this.data;
+        }
+    }
+
+    getShortString() {
+        const importantData = this.getMostImportantData();
+        const ignore = importantData.ignore;
+        delete importantData.ignore;
+        return {
+            text: this.logPos + ' \x1B[32m' + this.eventName + '\x1B[0m: ' + JSON.stringify( importantData ),
+            ignore,
+        };
+    }
+
+    toShortString() {
+        return this.getShortString().text;
     }
 
 };

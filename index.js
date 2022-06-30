@@ -6,6 +6,8 @@
  * which is a wonderful library but lacks the support for row-values
  */
 
+const util = require("util");
+
 const EventEmitter = require('events');
 const mysql = require('mysql');
 
@@ -53,8 +55,7 @@ class MariadbRowEvents extends EventEmitter {
     }
 
     binlogPacket( err, packet ) {
-        return;
-        console.log( "Got binlogPacket:", err, packet );
+        //console.log( "Got binlogPacket:", err, packet );
 
         if( err )
             return this.emitError( 'binlog-error', err );
@@ -67,6 +68,23 @@ class MariadbRowEvents extends EventEmitter {
             delete packet.dataError;
 
             return this.emitError( 'data-error', dataError || error );
+        }
+
+        if( this.opts.logPackets ) {
+            const { ignore, text } = packet.getShortString();
+            if( !ignore || this.opts.logPackets == "all" )
+                console.log( text );
+        }
+
+        switch( packet.eventName ) {
+            case 'WRITE_ROWS_EVENT': 
+                const writeEvent = {
+                    database: packet.data.tableMap.database,
+                    table:    packet.data.tableMap.table,
+                    columnArray: packet.data.columns,
+                };
+                console.log( "Would emit write-event:", writeEvent );
+                break;
         }
 
         this.emit( 'skipped', packet );
@@ -99,8 +117,10 @@ function main() {
             port: "3306",
         },
         binlog: {
-            position: 68397,
-        }
+            //position: 68397,
+            position: 4,
+        },
+        logPackets: true,
     }
     if( process.env.MYSQL_HOST      ) config.mysql.host     = process.env.MYSQL_HOST;
     if( process.env.MYSQL_PORT      ) config.mysql.port     = process.env.MYSQL_PORT;
