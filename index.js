@@ -78,6 +78,7 @@ class MariadbRowEvents extends EventEmitter {
 
         switch( packet.eventName ) {
             case 'WRITE_ROWS_EVENT': 
+                // TODO: read columns with SHOW TABLES and DESC <table>, then use data to change BLOG and ENUM
                 const writeEvent = {
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
