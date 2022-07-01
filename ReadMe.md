@@ -56,7 +56,7 @@ __Example:__
   operation: "insert",
   database: "exampledb",
   table: "exampletable",
-  columnsArray: [
+  columnsArray: [        // raw columns (as parsed from the packet)
     1234,
     "exampleuser",
     { type: "ENUM", length: 1, data: <Buffer 01> },
@@ -69,9 +69,9 @@ __Example:__
     primaryValues: [ 1234 ],
     primaryValue: "1234" // if there are multiple primaryValues, they are joined by `-`.
   },
-  columns: {
-    id: 9266,
-    name: "exampleuser",
+  columns: {             // object with decoded ENUMs, TEXTs and BLOBs ...
+    id: 9266,            // `columns` is `null` if table definition differs from this record
+    name: "exampleuser", // i.e. because of an `ALTER TABLE` statement in between
     type: "administrator",
     registered: 2022-07-01T00:00:00.000Z,
     motto: "Fly you fools",
