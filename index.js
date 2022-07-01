@@ -1,5 +1,5 @@
 /* mariadb replication slave that emits rows as events
- * (c)copyright 2022 by* Gerald Wodni <gerald.wodni@gmail.com>
+ * (c)copyright 2022 by Gerald Wodni <gerald.wodni@gmail.com>
  *
  * This project is loosly based on
  * https://github.com/p80-ch/mysql-binlog-emitter
@@ -31,7 +31,7 @@ class MariadbRowEvents extends EventEmitter {
                 return this.emitError( 'fatal', new Error( "Checksums enabled, set binlog_checksum=NONE in [mariadb] config" ) );
 
             /* fetch table information */
-            //await this.getTables();
+            await this.getTables();
         }
         catch( err ) {
             return this.emitError( 'fatal', err );
@@ -126,16 +126,23 @@ class MariadbRowEvents extends EventEmitter {
             case 'DELETE_ROWS_EVENT': 
             case 'UPDATE_ROWS_EVENT': 
             case 'WRITE_ROWS_EVENT': 
-                // TODO: read columns with SHOW TABLES and DESC <table>, then use data to change BLOG and ENUM
+                const operation = packet.eventName.replace("_ROWS_EVENT", "").toLowerCase().replace("write", "insert");
                 const rowsEvent = {
+                    logPos:   packet.logPos,
+                    operation,
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
                     columnsArray: packet.data.columns,
                 };
-                rowsEvent.columns = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
-                if( rowsEvent.table == "calls" )
-                    console.log( "Would emit write-event:", rowsEvent );
-                break;
+                const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
+                rowsEvent.keys = keys;
+                rowsEvent.columns = columns;
+
+                //console.log( operation, rowsEvent.table, rowsEvent.keys?.primaryValue );
+                this.emit( operation, rowsEvent );
+                this.emit( rowsEvent.table, rowsEvent );
+                this.emit( rowsEvent.table + '-' + operation, rowsEvent );
+                return;
         }
 
         this.emit( 'skipped', packet );
@@ -145,15 +152,21 @@ class MariadbRowEvents extends EventEmitter {
         const tableColumns = this.tables[ `${database}.${tableName}` ];
         if( typeof tableColumns == "unknown" ) {
             console.log( `WARNING: ColumnArray unknown table: ${database}.${tableName}` );
-            return null;
+            return { keys: null, columns: null };
         }
 
         if( columnsArray.length != tableColumns.length ) {
-            console.log( `WARNING: ColumnArray length missmatch: ${database}.${tableName}` );
-            return null;
+            console.log( `WARNING: ColumnArray length missmatch in ${database}.${tableName}: ${tableColumns.length} columns in DESC, but ${columnsArray.length} in EVENT` );
+            console.log( JSON.stringify( tableColumns ), "\n", JSON.stringify( columnsArray ) );
+            return { keys: null, columns: null };
         }
 
         const columns = {};
+        const keys = {
+            primaryColumns: [],
+            primaryValues: [],
+            primaryValue: null,
+        };
         for( let i = 0; i < tableColumns.length; i++ ) {
             const tableColumn = tableColumns[i];
             let value = columnsArray[i];
@@ -180,10 +193,18 @@ class MariadbRowEvents extends EventEmitter {
                     }
                     break;
             }
-            columns[ tableColumns[i].name ] = value;
+            columns[ tableColumn.name ] = value;
+
+            if( tableColumn.key == "PRI" ) {
+                keys.primaryColumns.push( tableColumn.name );
+                keys.primaryValues.push( value );
+            }
         }
 
-        return columns;
+        if( keys.primaryValues.length )
+            keys.primaryValue = keys.primaryValues.map( v => v.toString() ).join("-");
+
+        return { keys, columns };
     }
 
     bindErrors( sequence, errorType = 'mysql-error', events = [ 'error', 'unhandledError', 'timeout' ] ) {
@@ -226,7 +247,7 @@ async function main() {
             //position: 68397,
             position: 4,
         },
-        logPackets: true,
+        logPackets: false,
     }
     if( process.env.MYSQL_HOST      ) config.mysql.host     = process.env.MYSQL_HOST;
     if( process.env.MYSQL_PORT      ) config.mysql.port     = process.env.MYSQL_PORT;
@@ -244,7 +265,9 @@ async function main() {
         console.log( "Mysql", err );
         process.exit(2);
     });
-    await mariadbRowEvents.getTables();
+    mariadbRowEvents.on("customers-insert", row => {
+        console.log( "New customer:", row );
+    });
     mariadbRowEvents.connect();
     //console.log( mariadbRowEvents.tables );
 }
