@@ -88,6 +88,28 @@ Hint: this also emits an event `<table-name>` as well as `<table-name>-update`.
 Existing Row DELETEd  
 Hint: this also emits an event `<table-name>` as well as `<table-name>-delete`.
 
+### `fatal`
+Something went very wrong, you should exit.
+
+__Example:__
+```javascript
+    mariadbRowEvents.on('fatal', err => {
+        console.log( "Fatal", err );
+        process.exit(1);
+    });
+```
+
+### `mysql-error`
+MySQL (mariadb) threw an error, you should also exit in that case.
+
+__Example:__
+```javascript
+mariadbRowEvents.on('mysql-error', err => {
+    console.log( "Mysql", err );
+    process.exit(2);
+});
+```
+
 ## Security
 I would like to point out that storing credentials in source code is at best okay for testing. Use environment variables instead i.e. like so:
 ```javascript
