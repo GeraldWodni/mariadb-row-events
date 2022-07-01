@@ -41,7 +41,10 @@ mariadbRowEvents.on("customers-insert", row => {
 mariadbRowEvents.connect();
 ```
 
-## Events:
+## Installation
+`npm install mariadb-row-emitter`
+
+## Events
 ### `skipped`
 The event has not been handled by any other
 

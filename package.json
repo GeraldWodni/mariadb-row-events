@@ -1,5 +1,5 @@
 {
-  "name": "mysql-row-emitter",
+  "name": "mariadb-row-emitter",
   "version": "0.1.0",
   "description": "Replication slave that emits rows as events",
   "main": "index.js",
