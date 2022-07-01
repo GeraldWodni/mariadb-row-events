@@ -21,15 +21,23 @@ class MariadbRowEvents extends EventEmitter {
         this.opts = opts;
 
         this.pool = mysql.createPool( opts.mysql );
-        this.pool.query( "SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_VARIABLES WHERE VARIABLE_NAME LIKE 'MASTER_VERIFY_CHECKSUM'", (err, data) => {
-            if( err )
-                return this.emitError( 'fatal', err );
-            if( data.length > 0 && data[0].VARIABLE_VALUE == "ON" )
-                return this.emitError( 'fatal', new Error( "Checksums enabled, set binlog_checksum=NONE in [mariadb] config" ) );
-        });
     }
 
-    connect() {
+    async connect() {
+        try {
+            /* check compatibility */
+            const data = await this.query( "SELECT VARIABLE_VALUE FROM information_schema.GLOBAL_VARIABLES WHERE VARIABLE_NAME LIKE 'MASTER_VERIFY_CHECKSUM'")
+            if( data.length > 0 && data[0].VARIABLE_VALUE == "ON" )
+                return this.emitError( 'fatal', new Error( "Checksums enabled, set binlog_checksum=NONE in [mariadb] config" ) );
+
+            /* fetch table information */
+            //await this.getTables();
+        }
+        catch( err ) {
+            return this.emitError( 'fatal', err );
+        }
+
+        /* replication connection */
         this.pool.getConnection( (err, connection) => {
             if( err )
                 return this.emitError( 'error', err );
@@ -52,6 +60,44 @@ class MariadbRowEvents extends EventEmitter {
 
             this.connection._protocol._enqueue( registerSlave );
         });
+    }
+
+    async getTables() {
+        const tables = ( await this.query( "SHOW TABLES" ) ).map( row => row[ Object.keys(row)[0] ] );
+        this.tables = {};
+
+        const promises = [];
+        for( const table of tables )
+            promises.push( this.query( "DESC ??", [table] ) );
+        let i = 0;
+        for( const tableInfo of await Promise.all( promises ) ) {
+            const tableName = tables[i++];
+            const columns = [];
+            for( const columnInfo of tableInfo ) {
+                const column = {
+                    name:   columnInfo.Field,
+                    sqlType:columnInfo.Type,
+                    type:   columnInfo.Type,
+                    null:   columnInfo.Null == "YES",
+                    default:columnInfo.Default,
+                }
+
+                /* optional data */
+                if( columnInfo.Key )
+                    column.key = columnInfo.Key;
+                if( columnInfo.Extra )
+                    column.extra = columnInfo.Extra;
+
+                /* additional type information */
+                if( column.type.indexOf( "(" ) > 0 )
+                    column.type = column.type.split("(")[0];
+                if( column.type == "enum" )
+                    column.enum = column.sqlType.replace("enum(", "").replace(")", "").replace(/'/g, "").split(",");
+
+                columns.push( column );
+            }
+            this.tables[ `${this.opts.mysql.database}.${tableName}` ] = columns;
+        }
     }
 
     binlogPacket( err, packet ) {
@@ -77,18 +123,67 @@ class MariadbRowEvents extends EventEmitter {
         }
 
         switch( packet.eventName ) {
+            case 'DELETE_ROWS_EVENT': 
+            case 'UPDATE_ROWS_EVENT': 
             case 'WRITE_ROWS_EVENT': 
                 // TODO: read columns with SHOW TABLES and DESC <table>, then use data to change BLOG and ENUM
-                const writeEvent = {
+                const rowsEvent = {
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
-                    columnArray: packet.data.columns,
+                    columnsArray: packet.data.columns,
                 };
-                console.log( "Would emit write-event:", writeEvent );
+                rowsEvent.columns = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
+                if( rowsEvent.table == "calls" )
+                    console.log( "Would emit write-event:", rowsEvent );
                 break;
         }
 
         this.emit( 'skipped', packet );
+    }
+
+    arrayToColumns( database, tableName, columnsArray ) {
+        const tableColumns = this.tables[ `${database}.${tableName}` ];
+        if( typeof tableColumns == "unknown" ) {
+            console.log( `WARNING: ColumnArray unknown table: ${database}.${tableName}` );
+            return null;
+        }
+
+        if( columnsArray.length != tableColumns.length ) {
+            console.log( `WARNING: ColumnArray length missmatch: ${database}.${tableName}` );
+            return null;
+        }
+
+        const columns = {};
+        for( let i = 0; i < tableColumns.length; i++ ) {
+            const tableColumn = tableColumns[i];
+            let value = columnsArray[i];
+            switch( tableColumn.type.toUpperCase() ) {
+                case 'ENUM':
+                    try {
+                        value = tableColumn.enum[ value.data[0] - 1 ];
+                    } 
+                    catch( err ) {
+                        console.log( "WARNING: ColumnArray enum Error:", err )
+                        value = null;
+                    }
+                    break;
+                case 'TINYTEXT':
+                case 'MEDIUMTEXT':
+                case 'LONGTEXT':
+                case 'TEXT':
+                case 'TINYBLOB':
+                case 'MEDIUMBLOB':
+                case 'LONGBLOB':
+                case 'BLOB':
+                    if( value != null ) {
+                        value = value.blob;
+                    }
+                    break;
+            }
+            columns[ tableColumns[i].name ] = value;
+        }
+
+        return columns;
     }
 
     bindErrors( sequence, errorType = 'mysql-error', events = [ 'error', 'unhandledError', 'timeout' ] ) {
@@ -104,6 +199,16 @@ class MariadbRowEvents extends EventEmitter {
             this.emit( 'error', err );
         }
     }
+
+    query( sql, parameters = [] ) {
+        return new Promise( (fulfill, reject) => 
+            this.pool.query( sql, parameters, ( err, data ) => {
+                if( err )
+                    return reject( err );
+                fulfill( data );
+            })
+        );
+    }
 }
 
 /* https://dev.mysql.com/doc/internals/en/rows-event.html */
@@ -111,7 +216,7 @@ class MariadbRowEvents extends EventEmitter {
 module.exports = MariadbRowEvents;
 
 /* quick debug function which logs all packets to stdout */
-function main() {
+async function main() {
     const config = {
         mysql: {
             host: "localhost",
@@ -139,7 +244,9 @@ function main() {
         console.log( "Mysql", err );
         process.exit(2);
     });
+    await mariadbRowEvents.getTables();
     mariadbRowEvents.connect();
+    //console.log( mariadbRowEvents.tables );
 }
 
 if( require.main == module )
