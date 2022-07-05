@@ -7,6 +7,11 @@
     "start": "node ./node_modules/.bin/forever --minUptime 1000 --spinSleepTime 1000 -w index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "homepage": "https://github.com/GeraldWodni/mariadb-row-events#readme",
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/GeraldWodni/mariadb-row-events.git"
+  },
   "keywords": [
     "mysql",
     "mariadb",
