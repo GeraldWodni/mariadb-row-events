@@ -135,8 +135,21 @@ class MariadbRowEvents extends EventEmitter {
                     columnsArray: packet.data.columns,
                 };
                 const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
-                rowsEvent.keys = keys;
-                rowsEvent.columns = columns;
+                if( packet.eventName == 'UPDATE_ROWS_EVENT' ) {
+                    /* old */
+                    rowsEvent.oldColumnsArray = rowsEvent.columnsArray;
+                    rowsEvent.oldKeys = keys;
+                    rowsEvent.oldColumns = columns;
+                    /* add new value */
+                    const { keys: newKeys, columns: newColumns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columnsUpdate );
+                    rowsEvent.keys = newKeys;
+                    rowsEvent.columnsArray = packet.data.columnsUpdate; 
+                    rowsEvent.columns = newColumns;
+                }
+                else {
+                    rowsEvent.keys = keys;
+                    rowsEvent.columns = columns;
+                }
 
                 //console.log( operation, rowsEvent.table, rowsEvent.keys?.primaryValue );
                 this.emit( operation, rowsEvent );
@@ -267,6 +280,9 @@ async function main() {
     });
     mariadbRowEvents.on("customers-insert", row => {
         console.log( "New customer:", row );
+    });
+    mariadbRowEvents.on("customers-update", row => {
+        console.log( "Update customer:", row );
     });
     mariadbRowEvents.connect();
     //console.log( mariadbRowEvents.tables );

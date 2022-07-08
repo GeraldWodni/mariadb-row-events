@@ -598,12 +598,18 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
                 }
             case 'DELETE_ROWS_EVENT':
             case 'WRITE_ROWS_EVENT':
-            case 'UPDATE_ROWS_EVENT':
                 return {
                     database: this.data.tableMap.database,
                     table: this.data.tableMap.table,
                     columns: this.data.columns,
                     //ignore: true,
+                }
+            case 'UPDATE_ROWS_EVENT':
+                return {
+                    database: this.data.tableMap.database,
+                    table: this.data.tableMap.table,
+                    oldColumns: this.data.columns,
+                    columns: this.data.columnsUpdate,
                 }
             default:
                 return this.data;
