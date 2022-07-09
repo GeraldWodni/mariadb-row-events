@@ -201,16 +201,16 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         this.data.rows = [];
 
         while( parser._packetEnd - parser._offset > 0 ) {
-            console.log( "PARSING ROW, remaining:", parser._packetEnd - parser._offset )
+            //console.log( "PARSING ROW, remaining:", parser._packetEnd - parser._offset )
             let row = {}
 
             if( opts.parseOldUpdateRows ) {
                 row.oldNullColumns = this.parseBitfield( parser, this.data.columnCount );
-                row.oldColumnData = this.parseColumnData( parser, { nullColumns: row.oldNullColumns } );
+                row.oldColumnsArray = this.parseColumnData( parser, { nullColumns: row.oldNullColumns } );
             }
 
             row.nullColumns = this.parseBitfield( parser, this.data.columnCount );
-            row.columnData = this.parseColumnData( parser, { nullColumns: row.nullColumns } );
+            row.columnsArray = this.parseColumnData( parser, { nullColumns: row.nullColumns } );
 
             this.data.rows.push( row );
         }

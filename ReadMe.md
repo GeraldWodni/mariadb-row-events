@@ -34,9 +34,9 @@ mariadbRowEvents.on('mysql-error', err => {
     process.exit(2);
 });
 // hookup custom events
-mariadbRowEvents.on("customers-insert", row => {
-    console.log( "New customer:", row );
-});
+mariadbRowEvents.on("customers-insert", event => event.rows.forEach( row => {
+    console.log( "New customer:", row.columns );
+}) );
 // connect
 mariadbRowEvents.connect();
 ```
@@ -59,33 +59,95 @@ __Example:__
   operation: "insert",
   database: "exampledb",
   table: "exampletable",
-  columnsArray: [        // raw columns (as parsed from the packet)
-    1234,
-    "exampleuser",
-    { type: "ENUM", length: 1, data: <Buffer 01> },
-    2022-07-01T00:00:00.000Z,
-    { intLength: 2, length: 6, blob: "Fly you fools" },
-    null,
-  ],
-  keys: {
-    primaryColumns: [ "id" ],
-    primaryValues: [ 1234 ],
-    primaryValue: "1234" // if there are multiple primaryValues, they are joined by `-`.
-  },
-  columns: {             // object with decoded ENUMs, TEXTs and BLOBs ...
-    id: 9266,            // `columns` is `null` if table definition differs from this record
-    name: "exampleuser", // i.e. because of an `ALTER TABLE` statement in between
-    type: "administrator",
-    registered: 2022-07-01T00:00:00.000Z,
-    motto: "Fly you fools",
-    avatarImage: null,
-  }
+  rows: [{
+      columnsArray: [        // raw columns (as parsed from the packet)
+        1234,
+        "exampleuser",
+        { type: "ENUM", length: 1, data: <Buffer 01> },
+        2022-07-01T00:00:00.000Z,
+        { intLength: 2, length: 6, blob: "Fly you fools" },
+        null,
+      ],
+      keys: {
+        primaryColumns: [ "id" ],
+        primaryValues: [ 1234 ],
+        primaryValue: "1234" // if there are multiple primaryValues, they are joined by `-`.
+      },
+      columns: {             // object with decoded ENUMs, TEXTs and BLOBs ...
+        id: 9266,            // `columns` is `null` if table definition differs from this record
+        name: "exampleuser", // i.e. because of an `ALTER TABLE` statement in between
+        type: "administrator",
+        registered: 2022-07-01T00:00:00.000Z,
+        motto: "Fly you fools",
+        avatarImage: null,
+      }
+  }] // Note: there can several rows per event, but they share the same logPos, so they are kept together
 }
 ```
 
 ### `update`
 Existing Row UPDATEd  
 Hint: this also emits an event `<table-name>` as well as `<table-name>-update`.
+
+__Example:__
+```javascript
+{
+  logPos: 12164764,
+  operation: "insert",
+  database: "exampledb",
+  table: "exampletable",
+  rows: [{
+      oldColumnsArray: [
+        1234,
+        "exampleuser",
+        { type: "ENUM", length: 1, data: <Buffer 01> },
+        2022-07-01T00:00:00.000Z,
+        { intLength: 2, length: 6, blob: "Fly you fools" },
+        null,
+      ],
+      columnsArray: [
+        1234,
+        "exampleuser",
+        { type: "ENUM", length: 1, data: <Buffer 01> },
+        2022-07-01T00:00:00.000Z,
+        { intLength: 2, length: 6, blob: "Fool of a Took" },
+        null,
+      ],
+      oldKeys: {
+        primaryColumns: [ "id" ],
+        primaryValues: [ 1234 ],
+        primaryValue: "1234"
+      },
+      keys: {
+        primaryColumns: [ "id" ],
+        primaryValues: [ 1234 ],
+        primaryValue: "1234"
+      },
+      oldColumns: {
+        id: 9266,
+        name: "exampleuser",
+        type: "administrator",
+        registered: 2022-07-01T00:00:00.000Z,
+        motto: "Fly you fools",
+        avatarImage: null,
+      }
+      columns: {
+        id: 9266,
+        name: "exampleuser",
+        type: "administrator",
+        registered: 2022-07-01T00:00:00.000Z,
+        motto: "Fool of a Took",
+        avatarImage: null,
+      },
+      changedColumns: {
+        motto: {
+            old: "Fly you fools",
+            new: "Fool of a Took",
+        }
+      }
+  }]
+}
+```
 
 ### `delete`
 Existing Row DELETEd  

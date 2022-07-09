@@ -133,47 +133,19 @@ class MariadbRowEvents extends EventEmitter {
                     operation,
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
-                    //columnsArray: packet.data.columns,
                     rows: packet.data.rows,
                 };
 
-                console.log( `${operation}:`, rowsEvent );
                 for( const row of rowsEvent.rows ) {
-                    console.log( "ROWS_EVENT NULL DATA:", row.nullColumns );
-                    console.log( "ROWS_EVENT DATA:", row.columnData );
-                    const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.columnData );
+                    const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.columnsArray );
                     row.keys = keys;
                     row.columns = columns;
                     if( packet.eventName == 'UPDATE_ROWS_EVENT' ) {
-                        console.log( "UPDATE_ROWS_EVENT OLD:", row.oldColumnData );
-                        const { keys: oldKeys, columns: oldColumns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.oldColumnData );
+                        const { keys: oldKeys, columns: oldColumns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.oldColumnsArray );
                         row.oldKeys = oldKeys;
-                        row.oldColumns = columns;
+                        row.oldColumns = oldColumns;
+                        row.changedColumns = this.changedColumns( row.oldColumns, row.columns );
                     }
-                }
-
-                //process.exit(0);
-                return;
-
-
-
-
-
-                const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
-                if( packet.eventName == 'UPDATE_ROWS_EVENT' ) {
-                    /* old */
-                    rowsEvent.oldColumnsArray = rowsEvent.columnsArray;
-                    rowsEvent.oldKeys = keys;
-                    rowsEvent.oldColumns = columns;
-                    /* add new value */
-                    const { keys: newKeys, columns: newColumns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columnsUpdate );
-                    rowsEvent.keys = newKeys;
-                    rowsEvent.columnsArray = packet.data.columnsUpdate; 
-                    rowsEvent.columns = newColumns;
-                }
-                else {
-                    rowsEvent.keys = keys;
-                    rowsEvent.columns = columns;
                 }
 
                 //console.log( operation, rowsEvent.table, rowsEvent.keys?.primaryValue );
@@ -186,6 +158,16 @@ class MariadbRowEvents extends EventEmitter {
         this.emit( 'skipped', packet );
     }
 
+    changedColumns( oldColumns, newColumns ) {
+        const changes = {};
+
+        for( const key of Object.keys( newColumns ) )
+            if( oldColumns[ key ] != newColumns[ key ] )
+                changes[ key ] = { old: oldColumns[key], new: newColumns[key] };
+
+        return changes;
+    }
+
     arrayToColumns( database, tableName, columnsArray ) {
         const tableColumns = this.tables[ `${database}.${tableName}` ];
         if( typeof tableColumns == "unknown" ) {
@@ -195,7 +177,6 @@ class MariadbRowEvents extends EventEmitter {
 
         if( columnsArray.length != tableColumns.length ) {
             console.log( `WARNING: ColumnArray length missmatch in ${database}.${tableName}: ${tableColumns.length} columns in DESC, but ${columnsArray.length} in EVENT` );
-            console.log( JSON.stringify( tableColumns ), "\n", JSON.stringify( columnsArray ) );
             return { keys: null, columns: null };
         }
 
@@ -303,12 +284,13 @@ async function main() {
         console.log( "Mysql", err );
         process.exit(2);
     });
-    mariadbRowEvents.on("customers-insert", row => {
-        console.log( "New customer:", row );
-    });
-    mariadbRowEvents.on("customers-update", row => {
-        //console.log( "Update customer:", row );
-    });
+    mariadbRowEvents.on("customers-insert", evt => evt.rows.forEach( row => {
+        console.log( "New customer:", row.columns );
+    }) );
+    mariadbRowEvents.on("customers-update", evt => evt.rows.forEach( row => {
+        console.log( "Update customer:", row.changedColumns );
+        console.log( JSON.stringify( evt, null, 4 ) );
+    }) );
     mariadbRowEvents.connect();
     //console.log( mariadbRowEvents.tables );
 }
