@@ -164,7 +164,7 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         // metadata encodes the dynamic length for the following types
         // https://mariadb.com/kb/en/rows_event_v1v2/#column-data-formats
         const twoBytesLength = [ 'BIT', 'ENUM', 'SET', 'NEWDECIMAL', 'DECIMAL', 'VARCHAR', 'VAR_STRING', 'STRING' ];
-        const oneByteLength  = [ 'TINY_BLOB', 'MEDIUM_BLOB', 'LONG_BLOB', 'BLOB', 'FLOAT', 'DOUBLE', 'TIMESTAMP2', 'DATETIME2', 'TIME2 ' ];
+        const oneByteLength  = [ 'TINY_BLOB', 'MEDIUM_BLOB', 'LONG_BLOB', 'BLOB', 'FLOAT', 'DOUBLE', 'TIMESTAMP2', 'DATETIME2', 'TIME2' ];
 
         this.data.columnLengths = [];
         let offset = 0;
@@ -189,15 +189,31 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         }
     }
 
-    parseRowsEvent( parser, opts ) {
+    parseRowsEvent( parser, opts = {} ) {
         this.data.tableId = this.parseUnsignedNumber6( parser );
+        this.data.tableMap = tableMaps[ this.data.tableId ];
         this.data.flags = parser.parseUnsignedNumber(2);
         this.data.columnCount = parser.parseLengthCodedNumber();
+        if( opts.parseOldUpdateRows )
+            this.data.oldUsedColumns = this.parseBitfield( parser, this.data.columnCount );
         this.data.usedColumns = this.parseBitfield( parser, this.data.columnCount );
-        this.data.nullColumns = this.parseBitfield( parser, this.data.columnCount );
-        this.data.tableMap = tableMaps[ this.data.tableId ];
 
-        this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
+        this.data.rows = [];
+
+        while( parser._packetEnd - parser._offset > 0 ) {
+            console.log( "PARSING ROW, remaining:", parser._packetEnd - parser._offset )
+            let row = {}
+
+            if( opts.parseOldUpdateRows ) {
+                row.oldNullColumns = this.parseBitfield( parser, this.data.columnCount );
+                row.oldColumnData = this.parseColumnData( parser, { nullColumns: row.oldNullColumns } );
+            }
+
+            row.nullColumns = this.parseBitfield( parser, this.data.columnCount );
+            row.columnData = this.parseColumnData( parser, { nullColumns: row.nullColumns } );
+
+            this.data.rows.push( row );
+        }
     }
 
     parse_DELETE_ROWS_EVENT( parser, opts ) {
@@ -207,7 +223,10 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         return this.parseRowsEvent( parser, opts );  
     }
 
-    parse_UPDATE_ROWS_EVENT( parser, opts ) {
+    parse_UPDATE_ROWS_EVENT( parser, opts = {} ) {
+        return this.parseRowsEvent( parser, Object.assign( {
+          parseOldUpdateRows: true,
+        }, opts ) );
         this.data.tableId = this.parseUnsignedNumber6( parser );
         this.data.flags = parser.parseUnsignedNumber(2);
         this.data.columnCount = parser.parseLengthCodedNumber();
@@ -216,6 +235,7 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         this.data.nullColumns = this.parseBitfield( parser, this.data.columnCount );
         this.data.tableMap = tableMaps[ this.data.tableId ];
 
+        this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
         this.data.columns = this.parseColumnData( parser, { nullColumns: this.data.nullColumns } );
 
         this.data.nullColumnsUpdate = this.parseBitfield( parser, this.data.columnCount );
@@ -251,7 +271,8 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
                 continue;
             }
             /* See https://mariadb.com/kb/en/rows_event_v1v2/#column-data-formats */
-            switch( this.data.tableMap.columnTypeNames[i] ) {
+            const columnType = this.data.tableMap.columnTypeNames[i];
+            switch( columnType ) {
                 /* simple types */
                 case 'TINY':
                     columns.push( parser.parseUnsignedNumber(1) );
@@ -289,6 +310,15 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
                         const data = parser.parseBuffer(5);
                         const fraction = this.parseTemporalFraction( parser, fractionPrecision );
                         columns.push( this.bin2datetime( data, fraction ) );
+                    }
+                    break;
+
+                case 'TIME2': {
+                        const fractionPrecision = this.data.tableMap.columnLengths[i];
+                        const data = parser.parseBuffer(3);
+                        //const fraction = this.parseTemporalFraction( parser, fractionPrecision );
+                        columns.push( { type: 'TIME2', fractionPrecision, data } );
+                        //columns.push( this.bin2datetime( data, fraction ) );
                     }
                     break;
 
@@ -335,7 +365,7 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
                     break;
 
                 default:
-                    columns.push( { "undefined": true } );
+                    columns.push( { "undefined": true, columnType } );
             }
         }
         //console.log( this.logPos, JSON.stringify( columns ) );

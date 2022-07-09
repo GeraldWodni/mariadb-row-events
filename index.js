@@ -126,14 +126,39 @@ class MariadbRowEvents extends EventEmitter {
             case 'DELETE_ROWS_EVENT': 
             case 'UPDATE_ROWS_EVENT': 
             case 'WRITE_ROWS_EVENT': 
+
                 const operation = packet.eventName.replace("_ROWS_EVENT", "").toLowerCase().replace("write", "insert");
                 const rowsEvent = {
                     logPos:   packet.logPos,
                     operation,
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
-                    columnsArray: packet.data.columns,
+                    //columnsArray: packet.data.columns,
+                    rows: packet.data.rows,
                 };
+
+                console.log( `${operation}:`, rowsEvent );
+                for( const row of rowsEvent.rows ) {
+                    console.log( "ROWS_EVENT NULL DATA:", row.nullColumns );
+                    console.log( "ROWS_EVENT DATA:", row.columnData );
+                    const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.columnData );
+                    row.keys = keys;
+                    row.columns = columns;
+                    if( packet.eventName == 'UPDATE_ROWS_EVENT' ) {
+                        console.log( "UPDATE_ROWS_EVENT OLD:", row.oldColumnData );
+                        const { keys: oldKeys, columns: oldColumns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, row.oldColumnData );
+                        row.oldKeys = oldKeys;
+                        row.oldColumns = columns;
+                    }
+                }
+
+                //process.exit(0);
+                return;
+
+
+
+
+
                 const { keys, columns } = this.arrayToColumns( rowsEvent.database, rowsEvent.table, packet.data.columns );
                 if( packet.eventName == 'UPDATE_ROWS_EVENT' ) {
                     /* old */
@@ -282,7 +307,7 @@ async function main() {
         console.log( "New customer:", row );
     });
     mariadbRowEvents.on("customers-update", row => {
-        console.log( "Update customer:", row );
+        //console.log( "Update customer:", row );
     });
     mariadbRowEvents.connect();
     //console.log( mariadbRowEvents.tables );
