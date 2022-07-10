@@ -316,9 +316,8 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
                 case 'TIME2': {
                         const fractionPrecision = this.data.tableMap.columnLengths[i];
                         const data = parser.parseBuffer(3);
-                        //const fraction = this.parseTemporalFraction( parser, fractionPrecision );
-                        columns.push( { type: 'TIME2', fractionPrecision, data } );
-                        //columns.push( this.bin2datetime( data, fraction ) );
+                        const fraction = this.parseTemporalFraction( parser, fractionPrecision );
+                        columns.push( this.bin2time( data, fraction ) );
                     }
                     break;
 
@@ -476,6 +475,20 @@ parse_TABLE_MAP_EVENT( parser, opts ) {
         const second =   lowWord         & 0x3F;
 
         return new Date( Date.UTC( year, month-1, day, hour, minute, second, fraction ) );
+    }
+
+    bin2time( buffer, fraction ) {
+        let   word = (buffer.readUint16BE() << 8) | buffer.readUint8(2);
+        const isNegative = word & 0x800000 == 0;
+        word = isNegative ? (word ^ 0x7FFFFF) : word;
+        const hour =   ( word >> 12 ) & 0x1F;
+        const minute = ( word >> 6 )  & 0x3F;
+        let   second =   word         & 0x3F;
+
+        if( isNegative && fraction == 0 )
+            second++;
+
+        return new Date( Date.UTC( 1970, 0, 1, hour, minute, second, fraction ) );
     }
 
     /* Most of the following code is converted from the mariadb sources
