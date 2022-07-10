@@ -116,6 +116,10 @@ class MariadbRowEvents extends EventEmitter {
             return this.emitError( 'data-error', dataError || error );
         }
 
+        const skipUntil = this.opts.skipUntil || 0;
+        if( skipUntil >= packet.logPos )
+            return console.log( `LOGPOS SKIPPING UNTIL ${skipUntil} >= ${packet.logPos}` );
+
         if( this.opts.logPackets ) {
             const { ignore, text } = packet.getShortString();
             if( !ignore || this.opts.logPackets == "all" )
