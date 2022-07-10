@@ -164,6 +164,8 @@ class MariadbRowEvents extends EventEmitter {
 
     changedColumns( oldColumns, newColumns ) {
         const changes = {};
+        if( oldColumns == null || newColumns == null )
+            return changes;
 
         for( const key of Object.keys( newColumns ) )
             if( oldColumns[ key ] != newColumns[ key ] )
