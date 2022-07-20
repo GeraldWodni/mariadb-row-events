@@ -279,6 +279,10 @@ async function main() {
     if( process.env.MYSQL_DATABASE  ) config.mysql.database = process.env.MYSQL_DATABASE;
     if( process.env.MYSQL_USER      ) config.mysql.user     = process.env.MYSQL_USER;
     if( process.env.MYSQL_PASSWORD  ) config.mysql.password = process.env.MYSQL_PASSWORD;
+    if( process.env.MYSQL_SLAVE_SERVER_ID ) {
+        config.binlog.serverId = process.env.MYSQL_SLAVE_SERVER_ID;
+        config.slave = { serverId: process.env.MYSQL_SLAVE_SERVER_ID };
+    }
     console.log("config:", config);
 
     const mariadbRowEvents = new MariadbRowEvents( config );

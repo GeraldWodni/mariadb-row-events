@@ -177,6 +177,15 @@ mariadbRowEvents.on('mysql-error', err => {
 });
 ```
 
+## slaveId
+Different repliaction instances need different IDs. I recommand using an environment variable and set them like so:
+```javascript
+if( process.env.MYSQL_SLAVE_SERVER_ID ) {
+    config.binlog.serverId = process.env.MYSQL_SLAVE_SERVER_ID;
+    config.slave = { serverId: process.env.MYSQL_SLAVE_SERVER_ID };
+}
+```
+
 ## Security
 I would like to point out that storing credentials in source code is at best okay for testing. Use environment variables instead i.e. like so:
 ```javascript
