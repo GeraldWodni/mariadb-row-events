@@ -20,6 +20,19 @@ class MariadbRowEvents extends EventEmitter {
 
         this.opts = opts;
 
+        /* skipUntil "<timestamp>-<logPos>" */
+        if( typeof this.opts.skipUntil == "undefined" )
+            this.opts.skipUntil = "0-0";
+        const parts = this.opts.skipUntil.split("-");
+        if( parts.length == 2 ) {
+            this.skipUntilTimestamp = Number(parts[0]);
+            this.skipUntilLogPos = Number(parts[1]);
+        }
+        else {
+            this.skipUntilTimestamp = 0;
+            this.skipUntilLogPos = Number(parts[0]);
+        }
+
         this.pool = mysql.createPool( opts.mysql );
     }
 
@@ -116,9 +129,10 @@ class MariadbRowEvents extends EventEmitter {
             return this.emitError( 'data-error', dataError || error );
         }
 
-        const skipUntil = this.opts.skipUntil || 0;
-        if( skipUntil >= packet.logPos )
-            return console.log( `LOGPOS SKIPPING UNTIL ${skipUntil} >= ${packet.logPos}` );
+        if( this.skipUntilTimestamp > packet.timestamp )
+            return console.log( `TIMESTAMP SKIPPING UNTIL ${this.skipUntilTimestamp} > ${packet.timestamp}` );
+        if( this.skipUntilLogPos >= packet.logPos )
+            return console.log( `LOGPOS SKIPPING UNTIL ${this.skipUntilLogPos} >= ${packet.logPos}` );
 
         if( this.opts.logPackets ) {
             const { ignore, text } = packet.getShortString();
@@ -134,6 +148,7 @@ class MariadbRowEvents extends EventEmitter {
                 const operation = packet.eventName.replace("_ROWS_EVENT", "").toLowerCase().replace("write", "insert");
                 const rowsEvent = {
                     logPos:   packet.logPos,
+                    timestamp:packet.timestamp,
                     operation,
                     database: packet.data.tableMap.database,
                     table:    packet.data.tableMap.table,
@@ -273,6 +288,7 @@ async function main() {
             position: 4,
         },
         logPackets: false,
+        skipUntil: "1657792732-0",
     }
     if( process.env.MYSQL_HOST      ) config.mysql.host     = process.env.MYSQL_HOST;
     if( process.env.MYSQL_PORT      ) config.mysql.port     = process.env.MYSQL_PORT;
@@ -299,7 +315,7 @@ async function main() {
     }) );
     mariadbRowEvents.on("customers-update", evt => evt.rows.forEach( row => {
         console.log( "Update customer:", row.changedColumns );
-        console.log( JSON.stringify( evt, null, 4 ) );
+        //console.log( JSON.stringify( evt, null, 4 ) );
     }) );
     mariadbRowEvents.connect();
     //console.log( mariadbRowEvents.tables );

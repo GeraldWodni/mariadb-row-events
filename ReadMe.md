@@ -20,8 +20,9 @@ const config = {
         position: 4,   // starting position for each new log, you should store the last value of that (available as packet.logPos),
     },
     logPackets: false, // will log every packet, useful for debugging
-    skipUntil: 0,      // is binlog.position fails with "Client requested master to start replication from impossible position", use this to skip client side
-                       // see: https://mariadb.com/resources/blog/client-requested-master-to-start-replication-from-impossible-position/
+    skipUntil: "1657792732-0",  // is binlog.position fails with "Client requested master to start replication from impossible position", use this to skip client side
+                                // see: https://mariadb.com/resources/blog/client-requested-master-to-start-replication-from-impossible-position/
+                                // "<timestamp>-<logPos>" skips until timestamp equals, then skips until logPos is greater
 }
 
 // create new instance
