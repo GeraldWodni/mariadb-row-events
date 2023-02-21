@@ -18,11 +18,11 @@ const config = {
     },
     binlog: {
         position: 4,   // starting position for each new log, you should store the last value of that (available as packet.logPos),
+        binlogFilename: "replication_bin.000007", // watch for rotate events and use last value of nextBinlogName
     },
     logPackets: false, // will log every packet, useful for debugging
-    skipUntil: "1657792732-0",  // is binlog.position fails with "Client requested master to start replication from impossible position", use this to skip client side
-                                // see: https://mariadb.com/resources/blog/client-requested-master-to-start-replication-from-impossible-position/
-                                // "<timestamp>-<logPos>" skips until timestamp equals, then skips until logPos is greater
+    skipUntilLogPos: 4, // if binlog.position fails with "Client requested master to start replication from impossible position", use this to skip client side
+    skipUntilTimestamp: 0, // skips until timestamp greater, then skips until logPos is greater-equals
 }
 
 // create new instance
@@ -177,6 +177,10 @@ mariadbRowEvents.on('mysql-error', err => {
     process.exit(2);
 });
 ```
+
+### `rotate`
+New binlog file is used. Either due to size-limit or server-restart.
+Provide this value as connect-opts to ensure no useless transmission and double-firing
 
 ## slaveId
 Different repliaction instances need different IDs. I recommand using an environment variable and set them like so:

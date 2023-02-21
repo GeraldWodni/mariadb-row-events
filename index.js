@@ -20,18 +20,8 @@ class MariadbRowEvents extends EventEmitter {
 
         this.opts = opts;
 
-        /* skipUntil "<timestamp>-<logPos>" */
-        if( typeof this.opts.skipUntil == "undefined" )
-            this.opts.skipUntil = "0-0";
-        const parts = this.opts.skipUntil.split("-");
-        if( parts.length == 2 ) {
-            this.skipUntilTimestamp = Number(parts[0]);
-            this.skipUntilLogPos = Number(parts[1]);
-        }
-        else {
-            this.skipUntilTimestamp = 0;
-            this.skipUntilLogPos = Number(parts[0]);
-        }
+        this.skipUntilTimestamp = this.opts.skipUntilTimestamp || 0;
+        this.skipUntilLogPos = this.opts.skipUntilLogPos || 0;
 
         this.pool = mysql.createPool( opts.mysql );
     }
