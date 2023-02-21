@@ -141,6 +141,10 @@ class MariadbRowEvents extends EventEmitter {
         }
 
         switch( packet.eventName ) {
+            case: 'ROTATE_EVENT':
+                this.emit( 'rotate', packet.data );
+                return;
+
             case 'DELETE_ROWS_EVENT': 
             case 'UPDATE_ROWS_EVENT': 
             case 'WRITE_ROWS_EVENT': 
@@ -286,8 +290,9 @@ async function main() {
         binlog: {
             //position: 68397,
             position: 4,
+            //binlogFilename: "replication_bin.000010",
         },
-        logPackets: false,
+        logPackets: "all",
         skipUntil: "1657792732-0",
     }
     if( process.env.MYSQL_HOST      ) config.mysql.host     = process.env.MYSQL_HOST;
