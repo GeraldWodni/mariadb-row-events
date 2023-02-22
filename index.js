@@ -131,7 +131,7 @@ class MariadbRowEvents extends EventEmitter {
         }
 
         switch( packet.eventName ) {
-            case: 'ROTATE_EVENT':
+            case 'ROTATE_EVENT':
                 this.emit( 'rotate', packet.data );
                 return;
 
