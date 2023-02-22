@@ -1,6 +1,6 @@
 {
   "name": "mariadb-row-emitter",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Replication slave that emits rows as events",
   "main": "index.js",
   "scripts": {
