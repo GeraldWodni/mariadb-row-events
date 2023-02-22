@@ -33,6 +33,19 @@ class MariadbRowEvents extends EventEmitter {
             if( data.length > 0 && data[0].VARIABLE_VALUE == "ON" )
                 return this.emitError( 'fatal', new Error( "Checksums enabled, set binlog_checksum=NONE in [mariadb] config" ) );
 
+            /* if no logPos is provided, use most recent binary log and its file size */
+            if( this.opts.binlog.position == null && this.opts.binlog.binlogFilename == null ) {
+                const rows = await this.query( "SHOW BINARY LOGS" );
+                if( rows.length < 1 )
+                    return this.emitError( 'fatal', new Error( "SHOW BINARY LOGS is empty, and binlogFilename is null" ) );
+
+                const lastRow = rows[ rows.length - 1 ];
+                console.log( "USE BINARY LOG's last row", lastRow );
+                this.opts.binlog.binlogFilename = lastRow.Log_name;
+                this.opts.binlog.position = lastRow.File_size;
+                this.opts.skipUntilLogPos = lastRow.File_size;
+            }
+
             /* fetch table information */
             await this.getTables();
         }

@@ -11,7 +11,7 @@ class ComBinlogDumpPacket {
     }
 
     write( writer ) {
-        console.log( "write ComBinlogDumpPacket", this.position );
+        console.log( "write ComBinlogDumpPacket", this.binlogFilename, this.position );
         writer.writeUnsignedNumber(1, this.command);
         writer.writeUnsignedNumber(4, this.position);
         writer.writeUnsignedNumber(2, this.flags);
