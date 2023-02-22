@@ -44,6 +44,13 @@ class MariadbRowEvents extends EventEmitter {
                 this.opts.binlog.binlogFilename = lastRow.Log_name;
                 this.opts.binlog.position = lastRow.File_size;
                 this.opts.skipUntilLogPos = lastRow.File_size;
+
+                /* emit rotate to notify of new binlogFilename (if not set already) */
+                this.emit( 'rotate', {
+                    timestamp: this.opts.skipUntilTimestamp || Math.ceil((Date.now() / 1000)),
+                    position: this.opts.binlog.position,
+                    nextBinlogName: this.opts.binlog.binlogFilename,
+                });
             }
 
             /* fetch table information */
